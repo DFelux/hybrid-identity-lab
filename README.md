@@ -14,7 +14,7 @@ Theorie.
 │   On-Premises (Lab)     │         │      Microsoft Entra ID  │
 │                         │         │                          │
 │  Windows Server 2022    │  Sync   │   Entra ID Tenant        │
-│  AD DS (homelab.local)  │───────▶|   - Synced Users/Groups  │
+│  AD DS (homelab.local)  │───────▶│   - Synced Users/Groups  │
 │  192.168.56.10          │ Entra   │   - Conditional Access   │
 │                         │ Connect │   - MFA                  │
 │  Windows 11 Client      │         │                          │
