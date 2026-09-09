@@ -9,19 +9,26 @@ Theorie.
 
 ## Architektur
 
-```
-┌─────────────────────────┐         ┌──────────────────────────┐
-│   On-Premises (Lab)     │         │      Microsoft Entra ID  │
-│                         │         │                          │
-│  Windows Server 2022    │  Sync   │   Entra ID Tenant        │
-│  AD DS (homelab.local)  │───────▶│   - Synced Users/Groups  │
-│  192.168.56.10          │ Entra   │   - Conditional Access   │
-│                         │ Connect │   - MFA                  │
-│  Windows 11 Client      │         │                          │
-│  192.168.56.20          │ Hybrid  │                          │
-│  (Hybrid Join)          │◀──────▶│                          │
-└─────────────────────────┘         └──────────────────────────┘
-```
+```mermaid
+graph TD
+    subgraph OnPrem[On-Premises Infrastruktur]
+        DC01[DC01: Windows Server 2022<br/>AD DS / DNS / Entra Connect]
+        Win11[WIN11-CL01: Windows 11<br/>Domain-Joined Client]
+        DC01 --- Win11
+    end
+
+    subgraph Sync[Identitätssynchronisierung]
+        SyncEngine[Microsoft Entra Connect<br/>Password Hash Sync + Seamless SSO]
+    end
+
+    subgraph Azure[Microsoft Azure / Cloud]
+        Entra[Microsoft Entra ID Tenant]
+        CA[Bedingter Zugriff / MFA]
+        Entra --- CA
+    end
+
+    DC01 ==>|HTTPS / Port 443| SyncEngine
+    SyncEngine ==>|Ausgehende Sync| Entra
 
 ## Ziele
 
