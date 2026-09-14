@@ -10,17 +10,25 @@ Theorie.
 ## Architektur
 
 ```
-┌─────────────────────────┐         ┌──────────────────────────┐
-│   On-Premises (Lab)     │         │      Microsoft Entra ID  │
-│                         │         │                          │
-│  Windows Server 2022    │  Sync   │   Entra ID Tenant        │
-│  AD DS (homelab.local)  │───────▶│   - Synced Users/Groups  │
-│  192.168.56.10          │ Entra   │   - Conditional Access   │
-│                         │ Connect │   - MFA                  │
-│  Windows 11 Client      │         │                          │
-│  192.168.56.20          │ Hybrid  │                          │
-│  (Hybrid Join)          │◀──────▶│                          │
-└─────────────────────────┘         └──────────────────────────┘
+graph TD
+    subgraph OnPrem["On-Premises – Windows Server 2022 Lab"]
+        DC["Domain Controller<br/>AD DS / DNS"]
+        OU["Active Directory<br/>OUs / Users"]
+        EC["Microsoft Entra Connect<br/>PHS Agent"]
+        DC --> OU
+        OU --> EC
+    end
+
+    subgraph Cloud["Microsoft Entra ID Tenant"]
+        EntraUsers["Entra ID Directory<br/>Synced Users/Groups"]
+        CA["Conditional Access<br/>MFA"]
+        Apps["Azure & Cloud Apps<br/>M365, Azure Portal"]
+        EntraUsers --> CA
+        CA --> Apps
+    end
+
+    EC -- "Password Hash Sync<br/>HTTPS 443" --> EntraUsers
+
 ```
 
 Infrastruktur läuft auf Azure (Resource Group `hybrid-identity-lab`, Region Germany
