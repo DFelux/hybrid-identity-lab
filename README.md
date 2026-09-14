@@ -9,7 +9,7 @@ Theorie.
 
 ## Architektur
 
-```
+```mermaid
 graph TD
     subgraph OnPrem["On-Premises – Windows Server 2022 Lab"]
         DC["Domain Controller<br/>AD DS / DNS"]
@@ -28,8 +28,8 @@ graph TD
     end
 
     EC -- "Password Hash Sync<br/>HTTPS 443" --> EntraUsers
-
 ```
+
 
 Infrastruktur läuft auf Azure (Resource Group `hybrid-identity-lab`, Region Germany
 West Central): VM `vm-germany-ad-01`, zugehöriges VNet, NSG und Public IP.
