@@ -180,3 +180,73 @@ Dieses Projekt bildet praktisch folgende Skill-Areas der AZ-104-Prüfung ab:
 - Manage Azure identities and governance
 - Implement and manage governance (Tags, Locks)
 - Monitor and maintain Azure resources (Sync-Health, Troubleshooting)
+
+  ## Microsoft Entra Connect – SCP-Konfiguration
+
+### Ziel
+
+Konfiguration des Service Connection Point (SCP) in der Configuration-Partition
+des AD-Forests `homelab.local`, damit hybrid-eingebundene Geräte ihren
+Microsoft Entra ID-Tenant automatisch ermitteln können.
+
+### Voraussetzungen
+
+- Mitgliedschaft in der Gruppe **Enterprise Admins** (nicht ausreichend: Domain Admin) –
+  der SCP liegt in der forest-weiten Configuration-Partition, auf die Domain Admins
+  standardmäßig keine Schreibrechte haben.
+- Entra ID Global Administrator-Credentials für die Cloud-seitige Verknüpfung.
+
+### Vorgelagerter Schritt: Optionale Features
+
+Bei der Ersteinrichtung von Microsoft Entra Connect Sync wurde **Kennwort-Hashsynchronisierung**
+aktiviert gelassen; alle anderen Optionen (Password Writeback, Group Writeback etc.)
+blieben für diese Phase deaktiviert.
+
+![Optionale Features](Screenshot_2026-09-14_142657.png)
+
+### SCP-Konfiguration im Assistenten
+
+![SCP-Konfiguration](Screenshot_2026-09-20_131409.png)
+
+### Troubleshooting: "Mindestens eine ausgewählte Gesamtstruktur weist keinen Authentifizierungsdienst oder keine Anmeldeinformationen eines Unternehmensadministrators auf"
+
+**Symptom:** Trotz korrekt eingetragener `HOMELAB\Administrator`-Credentials
+bricht der Assistent mit obiger Fehlermeldung ab.
+
+**Ursache:** Die Fehlermeldung deckt zwei unabhängige Bedingungen ab ("...oder..."").
+In diesem Fall waren die Credentials korrekt – tatsächlich fehlte die Auswahl im
+Dropdown-Feld **"Authentifizierungsdienst"**, das standardmäßig leer bleibt und
+leicht übersehen wird.
+
+**Lösung:** Im SCP-Konfigurationsdialog das Dropdown "Authentifizierungsdienst"
+auf **Entra ID** setzen (Standardwert für Setups ohne klassisches ADFS/Federation,
+d. h. bei Password Hash Sync oder Pass-Through Authentication).
+
+### Abschluss der Konfiguration
+
+![Konfiguration abgeschlossen](Screenshot_2026-09-20_131540.png)
+
+### Verifizierung
+
+**SCP-Objekt in AD prüfen:**
+
+```powershell
+Get-ADObject -Filter {objectClass -eq "serviceConnectionPoint"} `
+  -SearchBase "CN=Configuration,DC=homelab,DC=local"
+```
+
+**Sync-Status im Synchronization Service Manager:**
+
+Full Import → Full Synchronization → Export, jeweils Status `success`
+für beide Connectoren (`homelab.local` und den Cloud-Connector).
+
+![Synchronization Service Manager](Screenshot_2026-09-20_131914_redacted.png)
+
+**Ankunft in Entra ID:**
+
+Im Entra-Portal unter Identität → Benutzer → Alle Benutzer zeigt die Spalte
+"On-premises sync" bei synchronisierten Objekten `Yes` – Unterscheidungsmerkmal
+zwischen on-prem-synchronisierten und cloud-nativen Accounts.
+
+![Benutzer in Entra ID](Screenshot_2026-09-20_132110_redacted.png)
+
