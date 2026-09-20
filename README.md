@@ -202,11 +202,11 @@ Bei der Ersteinrichtung von Microsoft Entra Connect Sync wurde **Kennwort-Hashsy
 aktiviert gelassen; alle anderen Optionen (Password Writeback, Group Writeback etc.)
 blieben für diese Phase deaktiviert.
 
-![Optionale Features](Screenshot_2026-09-14_142657.png)
+![Optionale Features](docs/img/entra-connect-setup/Screenshot 2026-09-14 142657.png)
 
 ### SCP-Konfiguration im Assistenten
 
-![SCP-Konfiguration](Screenshot_2026-09-20_131409.png)
+![SCP-Konfiguration](docs/img/entra-connect-setup/Screenshot 2026-09-20 131409.png)
 
 ### Troubleshooting: "Mindestens eine ausgewählte Gesamtstruktur weist keinen Authentifizierungsdienst oder keine Anmeldeinformationen eines Unternehmensadministrators auf"
 
@@ -224,7 +224,7 @@ d. h. bei Password Hash Sync oder Pass-Through Authentication).
 
 ### Abschluss der Konfiguration
 
-![Konfiguration abgeschlossen](Screenshot_2026-09-20_131540.png)
+![Konfiguration abgeschlossen](docs/img/entra-connect-setup/Screenshot 2026-09-20 131540.png)
 
 ### Verifizierung
 
@@ -240,7 +240,7 @@ Get-ADObject -Filter {objectClass -eq "serviceConnectionPoint"} `
 Full Import → Full Synchronization → Export, jeweils Status `success`
 für beide Connectoren (`homelab.local` und den Cloud-Connector).
 
-![Synchronization Service Manager](Screenshot_2026-09-20_131914.png)
+![Synchronization Service Manager](docs/img/entra-connect-setup/Screenshot 2026-09-20 131914.png)
 
 **Ankunft in Entra ID:**
 
@@ -248,5 +248,5 @@ Im Entra-Portal unter Identität → Benutzer → Alle Benutzer zeigt die Spalte
 "On-premises sync" bei synchronisierten Objekten `Yes` – Unterscheidungsmerkmal
 zwischen on-prem-synchronisierten und cloud-nativen Accounts.
 
-![Benutzer in Entra ID](Screenshot_2026-09-20_132110.png)
+![Benutzer in Entra ID](docs/img/entra-connect-setup/Screenshot 2026-09-20 132110.png)
 
