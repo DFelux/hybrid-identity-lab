@@ -240,7 +240,7 @@ Get-ADObject -Filter {objectClass -eq "serviceConnectionPoint"} `
 Full Import → Full Synchronization → Export, jeweils Status `success`
 für beide Connectoren (`homelab.local` und den Cloud-Connector).
 
-![Synchronization Service Manager](Screenshot_2026-09-20_131914_redacted.png)
+![Synchronization Service Manager](Screenshot_2026-09-20_131914.png)
 
 **Ankunft in Entra ID:**
 
@@ -248,5 +248,5 @@ Im Entra-Portal unter Identität → Benutzer → Alle Benutzer zeigt die Spalte
 "On-premises sync" bei synchronisierten Objekten `Yes` – Unterscheidungsmerkmal
 zwischen on-prem-synchronisierten und cloud-nativen Accounts.
 
-![Benutzer in Entra ID](Screenshot_2026-09-20_132110_redacted.png)
+![Benutzer in Entra ID](Screenshot_2026-09-20_132110.png)
 
