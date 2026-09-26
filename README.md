@@ -40,7 +40,7 @@ West Central): VM `vm-germany-ad-01`, zugehöriges VNet, NSG und Public IP.
 
 - [x] Microsoft Entra Connect Sync aufsetzen (PHS – Entscheidung dokumentiert, s.u.)
 - [x] Entra Hybrid Join für Windows-11-Client
-- [ ] Conditional-Access-Policy (MFA-Enforcement)
+- [x] MFA-Enforcement via Security Defaults (Conditional Access erfordert P1-Lizenz, s.u.)
 - [ ] RBAC-Vergleich lokale AD-Gruppen vs. Entra-ID-Rollen
 - [ ] Tagging- und Lock-Konzept auf Ressourcengruppen-Ebene
 - [x] Troubleshooting-Runbook für Sync-Fehler (vier reale Fälle unten dokumentiert)
@@ -275,6 +275,78 @@ Trennung von Adaptern: ein Host-Only/Internes-Netz-Adapter für die
 Domain-Kommunikation, ein separater NAT-Adapter für Internetzugang – statt beides
 über eine einzige Schnittstelle abzudecken.
 
+## MFA-Enforcement: Security Defaults statt Conditional Access
+
+### Ausgangslage
+
+Ursprünglich geplant war eine **Conditional-Access-Policy** mit granularem Targeting
+(Testgruppe, Cloud-Apps, Grant-Control "Require MFA"). Beim Anlegen der Policy im
+Entra Admin Center erschien jedoch folgender Hinweis:
+
+> "Create your own policies and target specific conditions like cloud apps,
+> sign-in risk, and device platforms with Microsoft Entra ID Premium. Your
+> organization does not have sufficient licensing to access this product."
+
+**Ursache:** Conditional Access ist ein **Microsoft Entra ID P1**-Feature und im
+kostenlosen Free Tier nicht enthalten. Sowohl die reguläre P1-Lizenz als auch die
+30-Tage-Testversion verlangen ein hinterlegtes Zahlungsmittel zur Verifizierung
+(auch wenn im Trial-Zeitraum nichts abgebucht wird). Das früher gängige
+Ausweichmittel – ein kostenloses Microsoft-365-Developer-Sandbox-Tenant (E5, ohne
+Kreditkarte) – ist seit 2024 auf Visual-Studio-Abonnenten und
+Partner-Programm-Mitglieder beschränkt und für Einzelpersonen ohne diese
+Voraussetzungen nicht mehr zugänglich.
+
+### Entscheidung
+
+Für dieses Homelab wurde bewusst **keine Kreditkarte hinterlegt**, um im Free Tier
+zu bleiben. Stattdessen wurde **Security Defaults** aktiviert – Microsofts
+kostenlose, tenant-weite MFA-Baseline.
+
+| Kriterium                          | Conditional Access (P1)                          | Security Defaults (Free)                  |
+| ----------------------------------- | -------------------------------------------------- | -------------------------------------------- |
+| Kosten                              | Lizenzpflichtig                                    | Kostenlos, im Free Tier enthalten           |
+| Granularität                        | Gruppen-, App-, Device- und Risiko-basiert         | Tenant-weit, keine Ausnahmen konfigurierbar |
+| MFA-Erzwingung                      | Konfigurierbar (Grant Control)                     | Für alle Nutzer, "one-size-fits-all"        |
+| Legacy-Auth blockieren              | Über Policy steuerbar                              | Automatisch für den gesamten Tenant          |
+| Einsatzzweck                        | Unternehmen mit differenzierten Zugriffsanforderungen | Kleine Umgebungen ohne P1/P2-Lizenz         |
+
+### Umsetzung
+
+1. **Entra Admin Center → Identity → Properties → Manage security defaults**
+2. Toggle auf **Enabled** gesetzt
+
+3. Mit dem separaten Testkonto angemeldet → sofortige Aufforderung zur
+   MFA-Registrierung ("Aktion erforderlich – Sicherheitsstandardwerte sind
+   aktiviert")
+
+   ![Security Defaults aktiv - MFA-Registrierung erforderlich](docs/img/entra-connect-setup/21-security-defaults-mfa-required-prompt.png)
+
+4. Registrierung über **Microsoft Authenticator** abgeschlossen
+
+   ![Microsoft Authenticator erfolgreich registriert](docs/img/entra-connect-setup/22-authenticator-app-registered.png)
+
+### Verifikation
+
+Erneute Anmeldung mit demselben Testkonto: Nach Passworteingabe erscheint der
+**Number-Matching-Prompt** (Schutz gegen MFA-Fatigue/Push-Bombing) – die
+angezeigte Zahl muss in der Authenticator-App bestätigt werden.
+
+![MFA Number-Matching bei der Anmeldung](docs/img/entra-connect-setup/23-mfa-number-matching-login.png)
+
+Damit ist bestätigt, dass MFA nicht nur bei der Erstregistrierung, sondern bei
+jeder folgenden Anmeldung aktiv durchgesetzt wird.
+
+### Lessons Learned
+
+- Lizenzgrenzen sind Teil des realen Cloud-Alltags – nicht jede Enterprise-Funktion
+  ist im Free Tier verfügbar, und Trial-Mechanismen sind bewusst so gestaltet
+  (Zahlungsmittel-Pflicht), dass sie Missbrauch erschweren.
+- Security Defaults sind für kleine Umgebungen ein legitimer, kostenloser
+  MFA-Baseline-Schutz, ersetzen aber keine differenzierte Zugriffssteuerung.
+  Conditional Access bleibt der nächste konzeptionelle Schritt, sobald eine P1-Test-
+  oder -Produktivlizenz verfügbar ist (Umsetzung dann analog zu diesem Abschnitt,
+  nur mit Gruppen-/App-Targeting statt Tenant-weiter Regel).
+
 ## Microsoft Entra Connect – SCP-Konfiguration
 
 ### Ziel
@@ -332,9 +404,10 @@ zwischen on-prem-synchronisierten und cloud-nativen Accounts.
 
 ## Status
 
-🚧 In Aufbau – Sync-Konfiguration, SCP und Entra Hybrid Join für den
-Windows-11-Client abgeschlossen. Nächster Schritt: Conditional-Access-Policy
-(MFA-Enforcement).
+🚧 In Aufbau – Sync-Konfiguration, SCP, Entra Hybrid Join für den Windows-11-Client
+und MFA-Enforcement via Security Defaults abgeschlossen (Conditional Access
+konzeptionell dokumentiert, Umsetzung erfordert P1-Lizenz). Nächster Schritt:
+RBAC-Vergleich lokale AD-Gruppen vs. Entra-ID-Rollen.
 
 ## Bezug zu AZ-104
 
