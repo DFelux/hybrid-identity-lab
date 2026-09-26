@@ -122,3 +122,224 @@ fortgesetzt.
 
 Der Installationsassistent akzeptierte das eingetragene Konto trotz Rolle
 "Globaler Administrator" nicht:
+
+```
+AADSTS50020: User account '...' from identity provider 'live.com' does not
+exist in tenant '' and cannot access the application
+'cb1056e2-e479-49de-ae31-7812af012ed8' (Microsoft Azure Active Directory Connect)
+in that tenant. The account needs to be added as an external user in the tenant
+first.
+```
+
+![Anmeldefehler AADSTS50020](docs/img/entra-connect-setup/05-msa-signin-error.png)
+
+**Ursache:** Das Admin-Konto war technisch als **persönliches Microsoft-Konto (MSA,
+Identity Provider `live.com`)** hinterlegt, nicht als natives Cloud-Konto des
+Tenants. Die App-Registrierung "Microsoft Azure Active Directory Connect"
+akzeptiert für diesen Anmeldeschritt keine MSA-gestützten Identitäten – unabhängig
+von der zugewiesenen Rolle.
+
+**Lösung:** Ein zusätzliches, rein cloud-natives Benutzerkonto direkt im Tenant
+angelegt (Entra Admin Center → Users → New user), diesem die Rolle Global
+Administrator zugewiesen und MFA über `aka.ms/mfasetup` registriert (Security
+Defaults verlangen MFA für Admin-Konten). Mit diesem Konto lief die Anmeldung im
+Assistenten fehlerfrei durch.
+
+### 3. UPN-Suffix `homelab.local` nicht verifizierbar
+
+Die Anmeldekonfiguration zeigte das lokale UPN-Suffix `homelab.local` als
+**"Nicht hinzugefügt"** an eine Microsoft-Entra-Domäne an.
+
+![UPN-Suffix nicht verifiziert](docs/img/entra-connect-setup/06-upn-suffix-not-verified.png)
+
+**Ursache:** `.local` ist eine nicht-routingfähige, interne Top-Level-Domain und
+kann bei Microsoft grundsätzlich nicht als eigene Domain verifiziert werden – ein
+bekanntes, in der Praxis häufiges Problem bei On-Prem-zu-Cloud-Migrationen, wenn
+historisch mit internen `.local`/`.corp`-Domains gearbeitet wurde.
+
+**Lösung:** Checkbox "Ohne Abgleich aller UPN-Suffixe mit überprüften Domänen
+fortfahren" aktiviert. Konsequenz: Synchronisierte Benutzer werden automatisch auf
+die Standard-`*.onmicrosoft.com`-Domain gemappt (z. B. `user@homelab.local` →
+`user@<tenant>.onmicrosoft.com`), Anmeldung an Cloud-Diensten erfolgt über diese
+Adresse.
+
+### 4. SCP-Konfiguration: "Mindestens eine ausgewählte Gesamtstruktur weist keinen Authentifizierungsdienst oder keine Anmeldeinformationen eines Unternehmensadministrators auf"
+
+**Symptom:** Trotz korrekt eingetragener `HOMELAB\Administrator`-Credentials
+bricht der Assistent mit obiger Fehlermeldung ab.
+
+![SCP-Konfiguration mit Fehler](docs/img/entra-connect-setup/10-scp-configuration-wizard.png)
+
+**Ursache:** Die Fehlermeldung deckt zwei unabhängige Bedingungen ab ("...oder...").
+In diesem Fall waren die Credentials korrekt – tatsächlich fehlte die Auswahl im
+Dropdown-Feld **"Authentifizierungsdienst"**, das standardmäßig leer bleibt und
+leicht übersehen wird.
+
+**Lösung:** Im SCP-Konfigurationsdialog das Dropdown "Authentifizierungsdienst"
+auf **Entra ID** setzen (Standardwert für Setups ohne klassisches ADFS/Federation,
+d. h. bei Password Hash Sync oder Pass-through Authentication).
+
+### 5. Entra Hybrid Join des Windows-11-Clients schlägt fehl (0x80072ee7 – DNS/Internet)
+
+**Symptom:** Nach erfolgreichem Durchlauf des "Configure device options"-Wizards
+(SCP erfolgreich angelegt) blieb der Windows 11 Client trotz mehrfach angestoßenem
+Sync-Zyklus und manuell getriggertem `Automatic-Device-Join`-Task im Zustand
+`AzureAdJoined: NO`.
+
+![Entra Connect Wizard - Hybrid Join konfiguriert](docs/img/entra-connect-setup/14-hybrid-join-wizard-complete.png)
+
+![dsregcmd status - AzureAdJoined NO](docs/img/entra-connect-setup/15-dsregcmd-not-joined.png)
+
+**Diagnose Schritt 1 – Task-Ausführung geprüft:**
+
+```powershell
+schtasks /run /tn "\Microsoft\Windows\Workplace Join\Automatic-Device-Join"
+```
+
+Task lief laut `Get-ScheduledTaskInfo` erfolgreich (`LastTaskResult: 0`) – der
+Join selbst schlug aber weiterhin fehl. Das zeigte, dass der Fehler nicht im
+Task-Trigger, sondern im eigentlichen Registrierungsversuch lag.
+
+![Get-ScheduledTaskInfo - LastTaskResult 0](docs/img/entra-connect-setup/16-scheduledtaskinfo-lastresult-0.png)
+
+**Diagnose Schritt 2 – Eventlog ausgewertet:**
+
+```
+Ereignisanzeige → Anwendungs- und Dienstprotokolle → Microsoft → Windows →
+User Device Registration → Admin
+```
+
+Ereignis-ID 201 lieferte die entscheidende Fehlermeldung:
+
+```
+Fehler für den Rückruf des Ermittlungsvorgangs mit Exitcode: Unknown HResult Error code: 0x80072ee7.
+Server gab folgenden HTTP-Status zurück: 0.
+```
+
+`0x80072ee7` = `WININET_E_NAME_NOT_RESOLVED` – der Client konnte den Discovery-
+Endpoint `enterpriseregistration.windows.net` nicht auflösen bzw. erreichen.
+
+![Eventlog - Ereignis 201, HResult 0x80072ee7](docs/img/entra-connect-setup/17-eventlog-201-0x80072ee7.png)
+
+**Root Cause:**
+
+```powershell
+ipconfig /all
+```
+
+zeigte, dass der Client zwar eine gültige IP und DNS-Server-Eintrag (interner DC)
+hatte, aber **kein Standardgateway** konfiguriert war.
+
+![ipconfig /all - kein Standardgateway](docs/img/entra-connect-setup/18-ipconfig-no-gateway.png)
+
+Ursache: Der VirtualBox-Netzwerkadapter der Client-VM war ausschließlich als
+**Host-Only-Adapter** konfiguriert. Dieser verbindet VMs untereinander sowie mit
+dem Host, stellt aber standardmäßig kein Gateway ins Internet bereit –
+Namensauflösung zum internen DC funktionierte, externe Erreichbarkeit (Microsoft
+Entra Discovery-Endpoints) jedoch nicht.
+
+**Lösung:** Zweiten Netzwerkadapter mit **NAT** an der Client-VM ergänzt
+(VirtualBox → VM-Einstellungen → Netzwerk → Adapter 2 → Angeschlossen an: NAT),
+um parallel zur internen Host-Only-Verbindung Internetzugang bereitzustellen.
+
+**Verifikation:**
+
+```powershell
+Test-NetConnection enterpriseregistration.windows.net -Port 443
+schtasks /run /tn "\Microsoft\Windows\Workplace Join\Automatic-Device-Join"
+dsregcmd /status
+```
+
+Ergebnis:
+
+```
+AzureAdJoined : YES
+DomainJoined  : YES
+DeviceAuthStatus : SUCCESS
+```
+
+![dsregcmd status - AzureAdJoined YES, DeviceAuthStatus SUCCESS](docs/img/entra-connect-setup/19-dsregcmd-joined-success.png)
+
+Zusätzlich im Microsoft Entra Admin Center unter **Devices → All devices**
+bestätigt: beide Geräte (Client und DC) erscheinen mit Join type **Microsoft
+Entra hybrid joined**.
+
+![Entra Admin Center - All devices, Join type Hybrid](docs/img/entra-connect-setup/20-entra-admincenter-all-devices.png)
+
+**Lessons Learned:** Ein erfolgreicher Task-Lauf (`LastTaskResult: 0`) bedeutet
+nur, dass der Trigger ausgeführt wurde – nicht, dass der eigentliche
+Registrierungsprozess erfolgreich war. Für die tatsächliche Fehlerursache ist das
+Eventlog unter `User Device Registration` die zuverlässigste Quelle. In
+verschachtelten Lab-Umgebungen mit mehreren VMs lohnt sich außerdem früh die
+Trennung von Adaptern: ein Host-Only/Internes-Netz-Adapter für die
+Domain-Kommunikation, ein separater NAT-Adapter für Internetzugang – statt beides
+über eine einzige Schnittstelle abzudecken.
+
+## Microsoft Entra Connect – SCP-Konfiguration
+
+### Ziel
+
+Konfiguration des Service Connection Point (SCP) in der Configuration-Partition
+des AD-Forests `homelab.local`, damit hybrid-eingebundene Geräte ihren
+Microsoft Entra ID-Tenant automatisch ermitteln können.
+
+### Voraussetzungen
+
+- Mitgliedschaft in der Gruppe **Enterprise Admins** (nicht ausreichend: Domain Admin) –
+  der SCP liegt in der forest-weiten Configuration-Partition, auf die Domain Admins
+  standardmäßig keine Schreibrechte haben.
+- Entra ID Global Administrator-Credentials für die Cloud-seitige Verknüpfung.
+
+### Vorgelagerter Schritt: Optionale Features
+
+Bei der Ersteinrichtung von Microsoft Entra Connect Sync wurde **Kennwort-Hashsynchronisierung**
+aktiviert gelassen; alle anderen Optionen (Password Writeback, Group Writeback etc.)
+blieben für diese Phase deaktiviert.
+
+![Optionale Features](docs/img/entra-connect-setup/09-optional-features-scp-context.png)
+
+### Abschluss der Konfiguration
+
+![Konfiguration abgeschlossen](docs/img/entra-connect-setup/11-scp-configuration-complete.png)
+
+### Verifizierung
+
+**SCP-Objekt in AD prüfen:**
+
+```powershell
+Get-ADObject -Filter {objectClass -eq "serviceConnectionPoint"} `
+  -SearchBase "CN=Configuration,DC=homelab,DC=local"
+```
+
+**Sync-Status im Synchronization Service Manager:**
+
+Full Import → Full Synchronization → Export, jeweils Status `success`
+für beide Connectoren (`homelab.local` und den Cloud-Connector).
+
+![Synchronization Service Manager](docs/img/entra-connect-setup/12-sync-service-manager-verified.png)
+
+**Ankunft in Entra ID:**
+
+Im Entra-Portal unter Identität → Benutzer → Alle Benutzer zeigt die Spalte
+"On-premises sync" bei synchronisierten Objekten `Yes` – Unterscheidungsmerkmal
+zwischen on-prem-synchronisierten und cloud-nativen Accounts.
+
+![Benutzer in Entra ID](docs/img/entra-connect-setup/13-entra-id-users-onprem-sync.png)
+
+## Stack
+
+`Windows Server 2022` · `AD DS` · `Microsoft Entra Connect` · `Entra ID` · `Conditional Access` · `PowerShell`
+
+## Status
+
+🚧 In Aufbau – Sync-Konfiguration, SCP und Entra Hybrid Join für den
+Windows-11-Client abgeschlossen. Nächster Schritt: Conditional-Access-Policy
+(MFA-Enforcement).
+
+## Bezug zu AZ-104
+
+Dieses Projekt bildet praktisch folgende Skill-Areas der AZ-104-Prüfung ab:
+
+- Manage Azure identities and governance
+- Implement and manage governance (Tags, Locks)
+- Monitor and maintain Azure resources (Sync-Health, Troubleshooting)
