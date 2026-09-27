@@ -365,7 +365,7 @@ unterscheiden sich aber deutlich in Scope, Granularität und Vererbungsmodell:
 
 ### Praktischer Test 1: Integrierte Reader-Rolle
 
-Dem Testkonto (`duncanfelux@renatefeluxgmx.onmicrosoft.com`) wurde auf der Resource
+Dem Testkonto (`d`) wurde auf der Resource
 Group `hybrid-identity-lab` die integrierte Rolle **Reader** zugewiesen.
 
 ![Role assignment - Reader zugewiesen](docs/img/entra-connect-setup/24-rbac-reader-role-assignment.png)
@@ -379,7 +379,7 @@ Resource Group – alle Ressourcen (VM, NSG, VNet, Public IP) sind sichtbar.
 auszulösen, schlägt korrekt mit `AuthorizationFailed` fehl:
 
 ```
-Der Client "duncanfelux@renatefeluxgmx.onmicrosoft.com" ... verfügt über keine
+Der Client "d" ... verfügt über keine
 Autorisierung zum Ausführen der Aktion
 "Microsoft.Resources/deployments/validate/action" über den Bereich "...". (Code:
 AuthorizationFailed)
@@ -446,7 +446,7 @@ Get-AzRoleDefinition -Name "VM Restart Operator"
 fehlenden Berechtigung für die zugeordnete Netzwerkschnittstelle:
 
 ```
-Der Client "duncanfelux@renatefeluxgmx.onmicrosoft.com" ... verfügt über keine
+Der Client "d" ... verfügt über keine
 Autorisierung zum Ausführen der Aktion "Microsoft.Network/networkInterfaces/write"
 über den Bereich "...". (Code: AuthorizationFailed)
 ```
@@ -483,7 +483,7 @@ gesetzt:
 
 ```powershell
 $tags = @{Environment="Lab"; Project="hybrid-identity-lab"; Owner="DFelux"}
-Update-AzTag -ResourceId "/subscriptions/d0c1660b-5377-4ac8-aa99-6eeb97a86121/resourceGroups/hybrid-identity-lab" -Tag $tags -Operation Merge
+Update-AzTag -ResourceId "/subscriptions/-/resourceGroups/hybrid-identity-lab" -Tag $tags -Operation Merge
 ```
 
 ![Tags per PowerShell gesetzt](docs/img/entra-connect-setup/29-tags-set-powershell.png)
