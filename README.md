@@ -41,7 +41,7 @@ West Central): VM `vm-germany-ad-01`, zugehöriges VNet, NSG und Public IP.
 - [x] Microsoft Entra Connect Sync aufsetzen (PHS – Entscheidung dokumentiert, s.u.)
 - [x] Entra Hybrid Join für Windows-11-Client
 - [x] MFA-Enforcement via Security Defaults (Conditional Access erfordert P1-Lizenz, s.u.)
-- [ ] RBAC-Vergleich lokale AD-Gruppen vs. Entra-ID-Rollen
+- [x] RBAC-Vergleich lokale AD-Gruppen vs. Entra-ID-Rollen
 - [ ] Tagging- und Lock-Konzept auf Ressourcengruppen-Ebene
 - [x] Troubleshooting-Runbook für Sync-Fehler (vier reale Fälle unten dokumentiert)
 
@@ -347,6 +347,127 @@ jeder folgenden Anmeldung aktiv durchgesetzt wird.
   oder -Produktivlizenz verfügbar ist (Umsetzung dann analog zu diesem Abschnitt,
   nur mit Gruppen-/App-Targeting statt Tenant-weiter Regel).
 
+## RBAC-Vergleich: Lokale AD-Sicherheitsgruppen vs. Azure RBAC
+
+### Konzept
+
+Lokale AD-Sicherheitsgruppen und Azure RBAC lösen dasselbe Grundproblem
+(Zugriffssteuerung über Gruppen-/Rollenzuweisung statt individueller Berechtigungen),
+unterscheiden sich aber deutlich in Scope, Granularität und Vererbungsmodell:
+
+| Kriterium | Lokale AD-Sicherheitsgruppen | Azure RBAC |
+| --- | --- | --- |
+| Scope | Domäne/OU, über ACLs auf Objekten | Management Group / Subscription / Resource Group / Resource |
+| Vererbung | Über OU-Struktur | Über Ressourcenhierarchie (nach unten vererbt) |
+| Verwaltung | Gruppenmitgliedschaft + Berechtigungen auf Objekten/Freigaben | Rollen-Definitionen (integriert oder custom) + Zuweisung auf Scope |
+| Granularität | Grob (Lese/Schreib/Vollzugriff je Objekt) | Fein (rollenspezifische Aktionen, z. B. nur VM-Neustart erlauben) |
+| Identitäts-Ursprung | Rein On-Prem (AD-Objekt-SID) | Entra ID-Objekt (kann synced oder cloud-nativ sein) |
+
+### Praktischer Test 1: Integrierte Reader-Rolle
+
+Dem Testkonto (`duncanfelux@renatefeluxgmx.onmicrosoft.com`) wurde auf der Resource
+Group `hybrid-identity-lab` die integrierte Rolle **Reader** zugewiesen.
+
+![Role assignment - Reader zugewiesen](docs/img/entra-connect-setup/24-rbac-reader-role-assignment.png)
+
+**Lesezugriff (erwartet: erfolgreich):** Anmeldung mit dem Testkonto, Navigation zur
+Resource Group – alle Ressourcen (VM, NSG, VNet, Public IP) sind sichtbar.
+
+![Reader - erfolgreicher Lesezugriff](docs/img/entra-connect-setup/25-rbac-reader-read-access-success.png)
+
+**Schreibzugriff (erwartet: blockiert):** Versuch, eine Deployment-Validierung
+auszulösen, schlägt korrekt mit `AuthorizationFailed` fehl:
+
+```
+Der Client "duncanfelux@renatefeluxgmx.onmicrosoft.com" ... verfügt über keine
+Autorisierung zum Ausführen der Aktion
+"Microsoft.Resources/deployments/validate/action" über den Bereich "...". (Code:
+AuthorizationFailed)
+```
+
+![Reader - Schreibzugriff blockiert](docs/img/entra-connect-setup/26-rbac-reader-write-blocked.png)
+
+### Praktischer Test 2: Custom Role "VM Restart Operator"
+
+Um "least privilege" konkreter zu demonstrieren als mit einer eingebauten Rolle,
+wurde eine **Custom Role** definiert, die ausschließlich das Neustarten von VMs
+erlaubt – kein Löschen, keine Konfigurationsänderung, keine Neuerstellung.
+
+**Rollendefinition:**
+
+```json
+{
+  "Name": "VM Restart Operator",
+  "IsCustom": true,
+  "Description": "Kann virtuelle Maschinen neu starten, aber nicht loeschen, aendern oder neu erstellen.",
+  "Permissions": [
+    {
+      "Actions": [
+        "Microsoft.Compute/virtualMachines/read",
+        "Microsoft.Compute/virtualMachines/restart/action",
+        "Microsoft.Compute/virtualMachines/instanceView/read"
+      ]
+    }
+  ],
+  "AssignableScopes": [
+    "/subscriptions/d0c1660b-5377-4ac8-aa99-6eeb97a86121"
+  ]
+}
+```
+
+**Erstellung:**
+```powershell
+New-AzRoleDefinition -InputFile "vm-restart-operator.json"
+```
+
+**Troubleshooting bei der Erstellung:** Der erste Versuch schlug mit
+`Invalid value for Permissions` fehl, obwohl das ältere, flache JSON-Format
+(`Actions` auf oberster Ebene statt in einem `Permissions`-Array) verwendet wurde.
+Ursache: Die installierte Az.Resources-Modulversion erwartet bereits das neue,
+verschachtelte `Permissions`-Array-Format, obwohl die Cmdlet-Warnung dieses Format
+offiziell erst für Az-Version 16.0.0 ankündigt. Nach Anpassung auf das
+`Permissions`-Array-Format lief die Erstellung durch – der zunächst weiterhin
+angezeigte Fehler stellte sich als bereits erfolgreich anlegte Rolle heraus
+(`RoleDefinitionWithSameNameExists` beim erneuten Ausführen), verifiziert über:
+
+```powershell
+Get-AzRoleDefinition -Name "VM Restart Operator"
+(Get-AzRoleDefinition -Name "VM Restart Operator").Permissions.Actions
+```
+
+**Zuweisung** analog zur Reader-Rolle über IAM → Add role assignment.
+
+**Test 1 – Neustart (erwartet: erfolgreich):**
+
+![Custom Role - Neustart erfolgreich](docs/img/entra-connect-setup/27-rbac-customrole-restart-success.png)
+
+**Test 2 – Löschen (erwartet: blockiert):** Der Löschdialog selbst öffnet sich noch
+(reine Read-Operation), das eigentliche Löschen scheitert jedoch präzise an der
+fehlenden Berechtigung für die zugeordnete Netzwerkschnittstelle:
+
+```
+Der Client "duncanfelux@renatefeluxgmx.onmicrosoft.com" ... verfügt über keine
+Autorisierung zum Ausführen der Aktion "Microsoft.Network/networkInterfaces/write"
+über den Bereich "...". (Code: AuthorizationFailed)
+```
+
+![Custom Role - Löschen blockiert](docs/img/entra-connect-setup/28-rbac-customrole-delete-blocked.png)
+
+### Lessons Learned
+
+- Die genaue Fehlermeldung bei `AuthorizationFailed` benennt exakt die fehlende
+  Control-Plane-Action (z. B. `Microsoft.Network/networkInterfaces/write`) – das
+  macht Custom Roles gut debugbar, da man direkt sieht, welche Action noch fehlt,
+  falls eine geplante Funktion nicht wie erwartet funktioniert.
+- Breaking-Change-Warnungen von Azure-PowerShell-Cmdlets sollten ernst genommen
+  werden, auch wenn sie ein zukünftiges Datum nennen – in der Praxis kann die
+  tatsächlich installierte Modulversion das neue Verhalten bereits vorab
+  erzwingen.
+- Im Gegensatz zu lokalen AD-Gruppen (grobe Berechtigungsstufen pro Objekt) lässt
+  sich mit Azure Custom Roles sehr präzise "kann X tun, aber nicht Y" abbilden –
+  praktisch relevant für Rollen wie Helpdesk (VM neu starten) ohne
+  Administrator-Rechte.
+
 ## Microsoft Entra Connect – SCP-Konfiguration
 
 ### Ziel
@@ -404,10 +525,10 @@ zwischen on-prem-synchronisierten und cloud-nativen Accounts.
 
 ## Status
 
-🚧 In Aufbau – Sync-Konfiguration, SCP, Entra Hybrid Join für den Windows-11-Client
-und MFA-Enforcement via Security Defaults abgeschlossen (Conditional Access
-konzeptionell dokumentiert, Umsetzung erfordert P1-Lizenz). Nächster Schritt:
-RBAC-Vergleich lokale AD-Gruppen vs. Entra-ID-Rollen.
+🚧 In Aufbau – Sync-Konfiguration, SCP, Entra Hybrid Join für den Windows-11-Client,
+MFA-Enforcement via Security Defaults sowie RBAC-Vergleich (Reader-Rolle und Custom
+Role) abgeschlossen. Nächster Schritt: Tagging- und Lock-Konzept auf
+Ressourcengruppen-Ebene.
 
 ## Bezug zu AZ-104
 
