@@ -42,7 +42,7 @@ West Central): VM `vm-germany-ad-01`, zugehöriges VNet, NSG und Public IP.
 - [x] Entra Hybrid Join für Windows-11-Client
 - [x] MFA-Enforcement via Security Defaults (Conditional Access erfordert P1-Lizenz, s.u.)
 - [x] RBAC-Vergleich lokale AD-Gruppen vs. Entra-ID-Rollen
-- [ ] Tagging- und Lock-Konzept auf Ressourcengruppen-Ebene
+- [x] Tagging- und Lock-Konzept auf Ressourcengruppen-Ebene
 - [x] Troubleshooting-Runbook für Sync-Fehler (vier reale Fälle unten dokumentiert)
 
 ## Warum dieses Projekt
@@ -468,6 +468,78 @@ Autorisierung zum Ausführen der Aktion "Microsoft.Network/networkInterfaces/wri
   praktisch relevant für Rollen wie Helpdesk (VM neu starten) ohne
   Administrator-Rechte.
 
+## Governance: Tagging- und Lock-Konzept
+
+### Ziel
+
+Konsistente Kategorisierung der Ressourcengruppe über Tags sowie Schutz vor
+versehentlichem Löschen über einen Resource Lock – beides Kernthemen der AZ-104-
+Domäne "Implement and manage governance".
+
+### Tags
+
+Auf der Resource Group `hybrid-identity-lab` wurden drei Tags per PowerShell
+gesetzt:
+
+```powershell
+$tags = @{Environment="Lab"; Project="hybrid-identity-lab"; Owner="DFelux"}
+Update-AzTag -ResourceId "/subscriptions/d0c1660b-5377-4ac8-aa99-6eeb97a86121/resourceGroups/hybrid-identity-lab" -Tag $tags -Operation Merge
+```
+
+![Tags per PowerShell gesetzt](docs/img/entra-connect-setup/29-tags-set-powershell.png)
+
+**Verifikation** subscription-weit über die zentrale Tags-Übersicht (Resource
+Manager → Tags) – zeigt zusätzlich, dass Tags nicht nur lokal an der Ressource
+hängen, sondern für konsolidierte Filterung/Kostenanalyse über die gesamte
+Subscription nutzbar sind:
+
+![Tags in der zentralen Übersicht verifiziert](docs/img/entra-connect-setup/30-tags-verification-portal.png)
+
+### Resource Lock
+
+Ein **Delete-Lock** (`PreventAccidentalDelete`) wurde auf Resource-Group-Ebene
+gesetzt, um versehentliches Löschen während der aktiven Lab-Entwicklung zu
+verhindern:
+
+```
+Resource Group hybrid-identity-lab → Locks → + Add
+Lock name: PreventAccidentalDelete
+Lock type: Delete
+```
+
+![Lock erfolgreich erstellt](docs/img/entra-connect-setup/31-lock-created.png)
+
+### Verifikation
+
+**Kontrast-Test – normale Operationen bleiben möglich:** Ein VM-Neustart wurde
+trotz aktivem Delete-Lock erfolgreich ausgeführt (Lock blockiert nur
+Löschvorgänge, keine sonstigen Schreiboperationen):
+
+![VM-Neustart funktioniert trotz aktivem Lock](docs/img/entra-connect-setup/32-restart-during-lock-success.png)
+
+**Blockade-Test:** Der Versuch, die gesamte Resource Group zu löschen, schlägt
+korrekt fehl:
+
+```
+Delete resource group hybrid-identity-lab failed
+The resource group hybrid-identity-lab is locked and can't be deleted.
+```
+
+![Löschung der Resource Group durch Lock blockiert](docs/img/entra-connect-setup/33-resourcegroup-delete-blocked-by-lock.png)
+
+### Lessons Learned
+
+- Ein direkter Löschversuch der VM selbst (statt der Resource Group) führte
+  zunächst zu einem anderen, irreführenden Fehler (`PutNicOperation was canceled
+  and superseded`) – verursacht durch eine noch laufende Neustart-Operation zum
+  Testzeitpunkt, nicht durch den Lock selbst. Für einen eindeutigen Lock-Nachweis
+  ist es sauberer, den Löschversuch auf **Resource-Group-Ebene** zu testen, statt
+  auf eine einzelne, gerade aktive Ressource.
+- Locks sind orthogonal zu RBAC: Ein Nutzer mit vollem Zugriff (z. B. Owner) kann
+  durch einen Lock trotzdem am Löschen gehindert werden – das ist eine
+  zusätzliche Schutzebene, keine Berechtigungssteuerung. Beide Mechanismen
+  ergänzen sich in einer durchdachten Governance-Strategie.
+
 ## Microsoft Entra Connect – SCP-Konfiguration
 
 ### Ziel
@@ -525,10 +597,11 @@ zwischen on-prem-synchronisierten und cloud-nativen Accounts.
 
 ## Status
 
-🚧 In Aufbau – Sync-Konfiguration, SCP, Entra Hybrid Join für den Windows-11-Client,
-MFA-Enforcement via Security Defaults sowie RBAC-Vergleich (Reader-Rolle und Custom
-Role) abgeschlossen. Nächster Schritt: Tagging- und Lock-Konzept auf
-Ressourcengruppen-Ebene.
+✅ Alle geplanten Ziele abgeschlossen: Sync-Konfiguration, SCP, Entra Hybrid Join
+für den Windows-11-Client, MFA-Enforcement via Security Defaults, RBAC-Vergleich
+(Reader-Rolle und Custom Role) sowie Tagging- und Lock-Konzept auf
+Ressourcengruppen-Ebene. Mögliche nächste Schritte: AVD-Lab-Erweiterung
+(M365/Intune, VDI) oder Terraform/Infrastructure-as-Code-Kapitel.
 
 ## Bezug zu AZ-104
 
