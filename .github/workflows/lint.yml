@@ -1,0 +1,24 @@
+name: PowerShell Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  psscriptanalyzer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+
+      - name: PSScriptAnalyzer ausführen
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          $results = Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error,Warning -ExcludeRule PSAvoidUsingWriteHost
+          $results | Format-Table RuleName, Severity, ScriptName, Line -AutoSize
+          if ($results | Where-Object { $_.Severity -eq 'Error' }) {
+            Write-Error "PSScriptAnalyzer hat Fehler gefunden."
+            exit 1
+          }
